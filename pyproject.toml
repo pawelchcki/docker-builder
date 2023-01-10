@@ -1,19 +1,12 @@
 [project]
-name = "docker_builder"
-version = "0.0.1"
+name = "docker-builder"
 description = "tooling to build modify and share Dockerfiles used for testing fictures"
-classifiers = [
-    "Programming Language :: Python :: 3"
-]
-dependencies = [
-    "docker"
-]
-
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = ["docker >= 6.0"]
+version = "0.0.1"
 
 [project.optional-dependencies]
-test = [
-    "pytest >= 5.0",
-]
+testing = ["pytest >= 5.0", "tox >= 4.2"]
 
 [build-system]
 requires = ["setuptools >= 40.6.0", "cython"]
@@ -22,11 +15,12 @@ build-backend = "setuptools.build_meta"
 [tool.tox]
 legacy_tox_ini = """
 [testenv]
-deps = pytest
+extras = testing
 commands = pytest -s {posargs}
 """
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
+testpaths = ["tests"]
+addopts = [
+    "--import-mode=importlib",
 ]

@@ -14,6 +14,9 @@ import docker
 
 project_root = Path(__file__).parent.parent
 
+def set_project_root(new_root: str|Path):
+    global project_root
+    project_root = Path(new_root)
 
 class Image(object):
     iid = str
@@ -50,38 +53,46 @@ class Image(object):
             new_iid = d.build()
             return Image(new_iid)
 
-    # TODO: allow extractting optional files - ie don't error when file is not found
-    def extract_files(self, target, paths=[]):
+    def _extract_files(self, paths=[]):
         dockerfile_contents = f"""
 FROM {self.iid} as source_image
 FROM scratch as target_image
 """
         for path in paths:
             dockerfile_contents += f"COPY --from=source_image {path} /\n"
-        with tempfile.NamedTemporaryFile() as dockerfile:
-            dockerfile.write(dockerfile_contents.encode())
-            dockerfile.seek(0)
-            d = Dockerfile(Path(dockerfile.name))
-            d.isolated_paths()
-            iid = d.build()
-            api = docker.from_env()
-            image = api.images.get(iid)
-            # TODO: poc of data extraction from iamges
-            with open(target, 'wb') as output:
-                for chunk in image.save():
-                    output.write(chunk)
+        
+        dockerfile = Dockerfile(dockerfile_contents = dockerfile_contents)
+        dockerfile.isolated_paths()
 
-    def cat_file(self, path):
-        with tempfile.NamedTemporaryFile() as tar:
-            self.extract_files(tar.name, paths = [path])
-            t = tarfile.TarFile(tar.name)
+        tmp_image = dockerfile.image()
+
+        for layer in tmp_image._layers():
+            for fname in layer.getnames():
+                yield (fname, layer.extractfile(fname))
+
+    def _save_image(self, target_path):
+        api = docker.from_env()
+        image = api.images.get(self.iid)
+        with open(target_path, "wb") as output:
+            for chunk in image.save():
+                output.write(chunk)
+            
+
+    def _layers(self):
+        with tempfile.NamedTemporaryFile() as tmp_image_file:
+            self._save_image(tmp_image_file.name)
+            t = tarfile.TarFile(fileobj=tmp_image_file)
             for fname in t.getnames():
                 if fname.endswith("/layer.tar"):
                     reader = t.extractfile(fname)
-                    inner = tarfile.TarFile(fileobj=reader)
-                    output = inner.extractfile(path)
-                    return output
-                    
+                    yield tarfile.TarFile(fileobj=reader)
+
+    def read_file(self, path):
+            for _, reader in self._extract_files(paths = [path]):
+                return reader.read()
+    def read_file_str(self, path):
+        return self.read_file(path).decode('utf-8')
+
     def __str__(self):
         return f"Image: {self.iid}"
 
@@ -90,12 +101,21 @@ class Dockerfile(object):
     dockerfile = Path
     root_dir = Path
 
-    def __init__(self, dockerfile: Path, target=None, root_dir=None):
+    def __init__(self, dockerfile: Path|None = None, dockerfile_contents: str|None = None, root_dir=None):
         self.dockerfile = dockerfile
+
+        if dockerfile_contents and not dockerfile:
+            self.dockerfile_contents = dockerfile_contents
+            self.tmp_dockerfile = tempfile.NamedTemporaryFile()
+            self.dockerfile = Path(self.tmp_dockerfile.name)
+            self.tmp_dockerfile.write(self.dockerfile_contents.encode())
+            self.tmp_dockerfile.seek(0)
+
         if root_dir:
             self.root_dir = root_dir
         else:
             self.root_dir = project_root
+
         self.fs_dependencies = {}
         self.isolated_build = False
 
@@ -186,7 +206,8 @@ def dockerfile(dockerfile, *args, **kwargs):
     if not dockerfile.is_absolute():
         parent = Path(inspect.stack()[1].filename).parent
         dockerfile = parent / dockerfile
-    return Dockerfile(dockerfile, *args, **kwargs)
+        
+    return Dockerfile(dockerfile = dockerfile, *args, **kwargs)
 
 
 class _CLIBuilder(object):
