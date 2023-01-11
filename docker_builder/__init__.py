@@ -70,6 +70,12 @@ class Image(object):
         new_iid = d.build()
         return Image(new_iid)
 
+    def execute_and_create_new_image(self, cmd_to_execute):
+        dockerfile_contents = f"""FROM {self.iid}
+        RUN {cmd_to_execute}
+        """
+        return Dockerfile(dockerfile_contents=dockerfile_contents).image()
+
     def tag(self, tag):
         api = docker.from_env()
         image = api.images.get(self.iid)
