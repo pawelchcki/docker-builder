@@ -378,7 +378,7 @@ def _cli_cat_file(args):
     print(image.read_file_str(args.path), end = None)
 
 
-def __main__():
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(

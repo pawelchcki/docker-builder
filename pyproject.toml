@@ -6,6 +6,9 @@ license = { file = "LICENSE" }
 dependencies = ["docker >= 6.0"]
 version = "0.0.1"
 
+[project.scripts]
+docker-builder = "docker_builder:main"
+
 [project.optional-dependencies]
 testing = ["pytest >= 5.0", "tox >= 4.2"]
 linting = ["black >= 22"]
@@ -13,9 +16,6 @@ linting = ["black >= 22"]
 [build-system]
 requires = ["setuptools >= 40.6.0", "cython"]
 build-backend = "setuptools.build_meta"
-
-[project.scripts]
-docker-builder = "docker_builder:__main__"
 
 [tool.tox]
 legacy_tox_ini = """
