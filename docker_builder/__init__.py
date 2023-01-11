@@ -118,7 +118,7 @@ class Dockerfile(object):
 
         if dockerfile_contents and not dockerfile:
             dockerfile = VirtualFile(dockerfile_contents)
-            self.virtual_files = dockerfile
+            self.virtual_files.append(dockerfile)
             self.dockerfile = dockerfile.path()
 
         if root_dir:
@@ -326,8 +326,7 @@ def _cli_waf_mutator(args):
 
 def _cli_cat_file(args):
     image = Image(args.image)
-    for line in image.cat_file(args.path).readlines():
-        print(line.decode("utf-8"))
+    print(image.read_file_str(args.path))
 
 if __name__ == '__main__':
     import sys
@@ -355,7 +354,6 @@ if __name__ == '__main__':
         "image", help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b")
     extract_files_parser.add_argument(
         "path")
-
 
     args = parser.parse_args()
 
