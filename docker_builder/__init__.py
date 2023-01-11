@@ -299,7 +299,7 @@ class _CLIBuilder(object):
                     print(stderr, end="")
                     print("----------------")
         else:
-            with subprocess.Popen(args, universal_newlines=True) as p:
+            with subprocess.Popen(args, stdout = sys.stderr.buffer, universal_newlines=True) as p:
                 if p.wait() != 0:
                     print("TODO: error building image")
 
@@ -351,25 +351,34 @@ def waf_mutator(image: Image, appsec_rule_version: str):
     )
 
 
+def _cli_locate_image(ptr):
+    if Path(ptr).exists():
+        return Dockerfile(Path(ptr)).image()
+
+    dockerfile: Dockerfile = locate(ptr)
+    if dockerfile:
+        return dockerfile.image()
+
+    return Image(ptr)
+
+
 def _cli_build_image(args):
-    dockerfile: Dockerfile = locate(args.python_path)
-    image = dockerfile.image()
+    image = _cli_locate_image(args.image)
     print(image.iid)
 
 
 def _cli_waf_mutator(args):
-    image = Image(args.image)
+    image = _cli_locate_image(args.image)
     mutated_image = waf_mutator(image, args.waf_rule_version)
     print(mutated_image.iid)
 
 
 def _cli_cat_file(args):
-    image = Image(args.image)
-    print(image.read_file_str(args.path))
+    image = _cli_locate_image(args.image)
+    print(image.read_file_str(args.path), end = None)
 
 
-if __name__ == "__main__":
-    import sys
+def __main__():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -378,25 +387,21 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers()
     build_parser = subparsers.add_parser("build")
     build_parser.set_defaults(func=_cli_build_image)
-    build_parser.add_argument(
-        "python_path",
-        help="python resource path to Dockerfile object e.g. utils.build.docker.golang.net-http",
+    image_help = (
+        "python resource path to Dockerfile object e.g. utils.build.docker.golang.net-http a dockerfile path, or a docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b ",
     )
+
+    build_parser.add_argument("image", help=image_help)
 
     waf_mutator_parser = subparsers.add_parser("waf_mutate")
     waf_mutator_parser.set_defaults(func=_cli_waf_mutator)
-    waf_mutator_parser.add_argument(
-        "image",
-        help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b",
-    )
+    waf_mutator_parser.add_argument("image", help=image_help)
     waf_mutator_parser.add_argument("waf_rule_version", help="waf rule version")
 
     extract_files_parser = subparsers.add_parser("cat_file")
     extract_files_parser.set_defaults(func=_cli_cat_file)
-    extract_files_parser.add_argument(
-        "image",
-        help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b",
-    )
+    extract_files_parser.add_argument("image", help=image_help)
+
     extract_files_parser.add_argument("path")
 
     args = parser.parse_args()
