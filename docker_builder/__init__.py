@@ -6,6 +6,7 @@ import os
 import tempfile
 import subprocess
 import shutil
+
 # from utils import project_root
 from pydoc import locate
 import tarfile
@@ -14,9 +15,11 @@ import docker
 
 project_root = Path(__file__).parent.parent
 
-def set_project_root(new_root: str|Path):
+
+def set_project_root(new_root: str | Path):
     global project_root
     project_root = Path(new_root)
+
 
 class VirtualFile(object):
     def __init__(self, contents):
@@ -28,13 +31,20 @@ class VirtualFile(object):
     def path(self):
         return Path(self.tmp_file.name)
 
+
 class Image(object):
     iid = str
 
     def __init__(self, iid):
         self.iid = iid
 
-    def modify_image(self, append_from_image=None, append_paths=None, append_paths_mapped=None, env={}):
+    def modify_image(
+        self,
+        append_from_image=None,
+        append_paths=None,
+        append_paths_mapped=None,
+        env={},
+    ):
         dockerfile_contents = ""
 
         if append_from_image:
@@ -72,8 +82,8 @@ FROM scratch as target_image
 """
         for path in paths:
             dockerfile_contents += f"COPY --from=source_image {path} /\n"
-        
-        dockerfile = Dockerfile(dockerfile_contents = dockerfile_contents)
+
+        dockerfile = Dockerfile(dockerfile_contents=dockerfile_contents)
         dockerfile.isolated_paths()
 
         tmp_image = dockerfile.image()
@@ -88,7 +98,6 @@ FROM scratch as target_image
         with open(target_path, "wb") as output:
             for chunk in image.save():
                 output.write(chunk)
-            
 
     def _layers(self):
         with tempfile.NamedTemporaryFile() as tmp_image_file:
@@ -100,19 +109,26 @@ FROM scratch as target_image
                     yield tarfile.TarFile(fileobj=reader)
 
     def read_file(self, path):
-        for _, reader in self._extract_files(paths = [path]):
+        for _, reader in self._extract_files(paths=[path]):
             return reader.read()
+
     def read_file_str(self, path):
-        return self.read_file(path).decode('utf-8')
+        return self.read_file(path).decode("utf-8")
 
     def __str__(self):
         return f"Image: {self.iid}"
+
 
 class Dockerfile(object):
     dockerfile = Path
     root_dir = Path
 
-    def __init__(self, dockerfile: Path|None = None, dockerfile_contents: str|None = None, root_dir=None):
+    def __init__(
+        self,
+        dockerfile: Path | None = None,
+        dockerfile_contents: str | None = None,
+        root_dir=None,
+    ):
         self.dockerfile = dockerfile
         self.virtual_files = []
 
@@ -144,7 +160,7 @@ class Dockerfile(object):
             if not src_path.is_absolute():
                 src_path = root_dir / src_path
             self.fs_dependencies[target] = src_path
-        
+
         return self
 
     def isolated_paths(self, *paths):
@@ -169,7 +185,7 @@ class Dockerfile(object):
             target = PurePath(target)
             if target.is_absolute():
                 target = target.relative_to("/")
-            files_to_copy[context_path/target] = src
+            files_to_copy[context_path / target] = src
 
         for target, _ in files_to_copy.items():
             path = target.parent
@@ -183,8 +199,7 @@ class Dockerfile(object):
                 shutil.copytree(src, target)
 
         builder = _CLIBuilder(None)
-        res = builder.build(
-            context_path, dockerfile=self.dockerfile, buildargs=args)
+        res = builder.build(context_path, dockerfile=self.dockerfile, buildargs=args)
 
         return res
 
@@ -194,7 +209,9 @@ class Dockerfile(object):
             return self._isolated_build(Path(temp_dir.name), args)
         else:
             builder = _CLIBuilder(None)
-            return builder.build(self.root_dir, dockerfile=self.dockerfile, buildargs=args)
+            return builder.build(
+                self.root_dir, dockerfile=self.dockerfile, buildargs=args
+            )
 
     def image(self):
         return Image(self.build())
@@ -208,11 +225,12 @@ def import_in_path_dockerfiles():
     caller_module = inspect.getmodule(caller_frame[0])
 
     path = Path(caller_module.__file__).parent
-    files = list(filter(lambda path: path.lower().endswith(
-        ".dockerfile"), os.listdir(path)))
+    files = list(
+        filter(lambda path: path.lower().endswith(".dockerfile"), os.listdir(path))
+    )
 
     for file in files:
-        attr_name = file[:file.rfind(".")]
+        attr_name = file[: file.rfind(".")]
         dockerfile = Dockerfile(path / file)
         setattr(caller_module, attr_name, dockerfile)
 
@@ -222,8 +240,8 @@ def dockerfile(dockerfile, *args, **kwargs):
     if not dockerfile.is_absolute():
         parent = Path(inspect.stack()[1].filename).parent
         dockerfile = parent / dockerfile
-        
-    return Dockerfile(dockerfile = dockerfile, *args, **kwargs)
+
+    return Dockerfile(dockerfile=dockerfile, *args, **kwargs)
 
 
 class _CLIBuilder(object):
@@ -232,10 +250,19 @@ class _CLIBuilder(object):
         # TODO: this setting should not rely on global env
         self.quiet = False if os.getenv("DOCKER_QUIET") is None else True
 
-    def build(self, path, tag=None,
-              nocache=False, pull=False,
-              forcerm=False, dockerfile=None, container_limits=None,
-              buildargs=None, cache_from=None, target=None):
+    def build(
+        self,
+        path,
+        tag=None,
+        nocache=False,
+        pull=False,
+        forcerm=False,
+        dockerfile=None,
+        container_limits=None,
+        buildargs=None,
+        cache_from=None,
+        target=None,
+    ):
 
         if dockerfile:
             dockerfile = os.path.join(path, dockerfile)
@@ -254,7 +281,12 @@ class _CLIBuilder(object):
         command_builder.add_arg("--iidfile", iidfile)
         args = command_builder.build([path])
         if self.quiet:
-            with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as p:
+            with subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            ) as p:
                 stdout, stderr = p.communicate()
                 if p.wait() != 0:
                     # TODO: add better error handling
@@ -303,14 +335,21 @@ class _CommandBuilder(object):
     def build(self, args):
         return self._args + args
 
+
 # example of a mutator
 def waf_mutator(image: Image, appsec_rule_version: str):
-    return image.modify_image(append_paths_mapped={"SYSTEM_TESTS_APPSEC_EVENT_RULES_VERSION": VirtualFile(appsec_rule_version),
-                "waf_rule_set.json": "binaries/waf_rule_set.json"}, env={
-        "DD_APPSEC_RULES": "/waf_rule_set.json",
-        "DD_APPSEC_RULESET": "/waf_rule_set.json",
-        "DD_APPSEC_RULES_PATH": "/waf_rule_set.json"
-    })
+    return image.modify_image(
+        append_paths_mapped={
+            "SYSTEM_TESTS_APPSEC_EVENT_RULES_VERSION": VirtualFile(appsec_rule_version),
+            "waf_rule_set.json": "binaries/waf_rule_set.json",
+        },
+        env={
+            "DD_APPSEC_RULES": "/waf_rule_set.json",
+            "DD_APPSEC_RULESET": "/waf_rule_set.json",
+            "DD_APPSEC_RULES_PATH": "/waf_rule_set.json",
+        },
+    )
+
 
 def _cli_build_image(args):
     dockerfile: Dockerfile = locate(args.python_path)
@@ -328,32 +367,37 @@ def _cli_cat_file(args):
     image = Image(args.image)
     print(image.read_file_str(args.path))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import sys
     import argparse
 
     parser = argparse.ArgumentParser(
-        prog='utils.docker',
-        description='system-tests docker utility')
+        prog="utils.docker", description="system-tests docker utility"
+    )
     subparsers = parser.add_subparsers()
     build_parser = subparsers.add_parser("build")
     build_parser.set_defaults(func=_cli_build_image)
     build_parser.add_argument(
-        "python_path", help="python resource path to Dockerfile object e.g. utils.build.docker.golang.net-http")
+        "python_path",
+        help="python resource path to Dockerfile object e.g. utils.build.docker.golang.net-http",
+    )
 
     waf_mutator_parser = subparsers.add_parser("waf_mutate")
     waf_mutator_parser.set_defaults(func=_cli_waf_mutator)
     waf_mutator_parser.add_argument(
-        "image", help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b")
-    waf_mutator_parser.add_argument(
-        "waf_rule_version", help="waf rule version")
+        "image",
+        help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b",
+    )
+    waf_mutator_parser.add_argument("waf_rule_version", help="waf rule version")
 
     extract_files_parser = subparsers.add_parser("cat_file")
     extract_files_parser.set_defaults(func=_cli_cat_file)
     extract_files_parser.add_argument(
-        "image", help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b")
-    extract_files_parser.add_argument(
-        "path")
+        "image",
+        help="docker image identifier e.g. busybox or 18fa1f67c0a3b52e50d9845262a4226a6e4474b80354c5ef71ef27e438c6650b",
+    )
+    extract_files_parser.add_argument("path")
 
     args = parser.parse_args()
 
