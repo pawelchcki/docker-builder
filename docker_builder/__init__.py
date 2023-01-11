@@ -1,6 +1,6 @@
 import sys
 import types
-from pathlib import Path
+from pathlib import Path, PurePath
 import inspect
 import os
 import tempfile
@@ -17,6 +17,16 @@ project_root = Path(__file__).parent.parent
 def set_project_root(new_root: str|Path):
     global project_root
     project_root = Path(new_root)
+
+class VirtualFile(object):
+    def __init__(self, contents):
+        self.contents = contents
+        self.tmp_file = tempfile.NamedTemporaryFile()
+        self.tmp_file.write(self.contents.encode())
+        self.tmp_file.seek(0)
+
+    def path(self):
+        return Path(self.tmp_file.name)
 
 class Image(object):
     iid = str
@@ -41,17 +51,19 @@ class Image(object):
         for k, v in env.items():
             dockerfile_contents += f"ENV {k} = {v}\n"
 
-        with tempfile.NamedTemporaryFile() as dockerfile:
-            dockerfile.write(dockerfile_contents.encode())
-            dockerfile.seek(0)
-            d = Dockerfile(Path(dockerfile.name))
-            if append_paths:
-                d.isolated_paths(*append_paths)
-            if append_paths_mapped:
-                d.isolated_paths_mapped(append_paths_mapped)
+        d = Dockerfile(dockerfile_contents=dockerfile_contents)
+        if append_paths:
+            d.isolated_paths(*append_paths)
+        if append_paths_mapped:
+            d.isolated_paths_mapped(append_paths_mapped)
 
-            new_iid = d.build()
-            return Image(new_iid)
+        new_iid = d.build()
+        return Image(new_iid)
+
+    def tag(self, tag):
+        api = docker.from_env()
+        image = api.images.get(self.iid)
+        image.tag(tag)
 
     def _extract_files(self, paths=[]):
         dockerfile_contents = f"""
@@ -88,14 +100,13 @@ FROM scratch as target_image
                     yield tarfile.TarFile(fileobj=reader)
 
     def read_file(self, path):
-            for _, reader in self._extract_files(paths = [path]):
-                return reader.read()
+        for _, reader in self._extract_files(paths = [path]):
+            return reader.read()
     def read_file_str(self, path):
         return self.read_file(path).decode('utf-8')
 
     def __str__(self):
         return f"Image: {self.iid}"
-
 
 class Dockerfile(object):
     dockerfile = Path
@@ -103,13 +114,12 @@ class Dockerfile(object):
 
     def __init__(self, dockerfile: Path|None = None, dockerfile_contents: str|None = None, root_dir=None):
         self.dockerfile = dockerfile
+        self.virtual_files = []
 
         if dockerfile_contents and not dockerfile:
-            self.dockerfile_contents = dockerfile_contents
-            self.tmp_dockerfile = tempfile.NamedTemporaryFile()
-            self.dockerfile = Path(self.tmp_dockerfile.name)
-            self.tmp_dockerfile.write(self.dockerfile_contents.encode())
-            self.tmp_dockerfile.seek(0)
+            dockerfile = VirtualFile(dockerfile_contents)
+            self.virtual_files = dockerfile
+            self.dockerfile = dockerfile.path()
 
         if root_dir:
             self.root_dir = root_dir
@@ -127,11 +137,14 @@ class Dockerfile(object):
             root_dir = parent / root_dir
 
         for target, src in mapped_paths.items():
+            if isinstance(src, VirtualFile):
+                self.virtual_files.append(src)
+                src = src.path()
             src_path = Path(src)
             if not src_path.is_absolute():
                 src_path = root_dir / src_path
             self.fs_dependencies[target] = src_path
-
+        
         return self
 
     def isolated_paths(self, *paths):
@@ -153,6 +166,9 @@ class Dockerfile(object):
 
         files_to_copy = {}
         for target, src in self.fs_dependencies.items():
+            target = PurePath(target)
+            if target.is_absolute():
+                target = target.relative_to("/")
             files_to_copy[context_path/target] = src
 
         for target, _ in files_to_copy.items():
@@ -287,21 +303,14 @@ class _CommandBuilder(object):
     def build(self, args):
         return self._args + args
 
-
+# example of a mutator
 def waf_mutator(image: Image, appsec_rule_version: str):
-    with tempfile.NamedTemporaryFile() as version_file:
-        version_file.write(appsec_rule_version.encode())
-        version_file.seek(0)
-        version_file
-        paths = {"SYSTEM_TESTS_APPSEC_EVENT_RULES_VERSION": version_file.name,
-                 "waf_rule_set.json": "binaries/waf_rule_set.json"}
-        new_image = image.modify_image(append_paths_mapped=paths, env={
-            "DD_APPSEC_RULES": "/waf_rule_set.json",
-            "DD_APPSEC_RULESET": "/waf_rule_set.json",
-            "DD_APPSEC_RULES_PATH": "/waf_rule_set.json"
-        })
-        return new_image
-
+    return image.modify_image(append_paths_mapped={"SYSTEM_TESTS_APPSEC_EVENT_RULES_VERSION": VirtualFile(appsec_rule_version),
+                "waf_rule_set.json": "binaries/waf_rule_set.json"}, env={
+        "DD_APPSEC_RULES": "/waf_rule_set.json",
+        "DD_APPSEC_RULESET": "/waf_rule_set.json",
+        "DD_APPSEC_RULES_PATH": "/waf_rule_set.json"
+    })
 
 def _cli_build_image(args):
     dockerfile: Dockerfile = locate(args.python_path)

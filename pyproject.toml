@@ -7,6 +7,7 @@ version = "0.0.1"
 
 [project.optional-dependencies]
 testing = ["pytest >= 5.0", "tox >= 4.2"]
+linting = ["black >= 22"]
 
 [build-system]
 requires = ["setuptools >= 40.6.0", "cython"]
