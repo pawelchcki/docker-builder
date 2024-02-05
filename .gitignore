@@ -6,4 +6,6 @@ __pycache__/
 build/
 dist/
 .venv
-result/
+
+# nix
+/result
