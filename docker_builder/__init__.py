@@ -269,7 +269,6 @@ class _CLIBuilder(object):
         cache_from=None,
         target=None,
     ):
-
         if dockerfile:
             dockerfile = os.path.join(path, dockerfile)
         iidfile = tempfile.mktemp()
@@ -305,7 +304,9 @@ class _CLIBuilder(object):
                     print(stderr, end="")
                     print("----------------")
         else:
-            with subprocess.Popen(args, stdout = sys.stderr.buffer, universal_newlines=True) as p:
+            with subprocess.Popen(
+                args, stdout=sys.stderr.buffer, universal_newlines=True
+            ) as p:
                 if p.wait() != 0:
                     print("TODO: error building image")
 
@@ -381,7 +382,7 @@ def _cli_waf_mutator(args):
 
 def _cli_cat_file(args):
     image = _cli_locate_image(args.image)
-    print(image.read_file_str(args.path), end = None)
+    print(image.read_file_str(args.path), end=None)
 
 
 def main():
