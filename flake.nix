@@ -7,6 +7,7 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
     pyproject-nix.url = "github:nix-community/pyproject.nix";
+    # flake-root.url = "github:srid/flake-root";
   };
 
   outputs =
@@ -34,13 +35,15 @@
 
       pythonPackages = pkgs.python310Packages;
       treefmt = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
+
+      projectLib = python.pkgs.buildPythonPackage (projectAttrs);
     in
     {
       packages = {
         python = python;
       };
 
-      packages.default = python.pkgs.buildPythonApplication ( projectAttrs );
+      packages.default = projectLib;
 
       formatter = treefmt.config.build.wrapper;
       devShells.default =
@@ -53,6 +56,9 @@
                 pythonPackages.pytest
                 pythonPackages.venvShellHook
               ];
+            postShellHook = ''
+              export PYTHONPATH="$PYTHONPATH:$(pwd)" # ensuring pytest invocation works
+            '';
           };
     });
 }
