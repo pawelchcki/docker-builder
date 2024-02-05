@@ -29,3 +29,5 @@ testpaths = ["tests"]
 addopts = [
     "--import-mode=importlib",
 ]
+[tool.setuptools.packages.find]
+exclude = ["/result"]  # exclude nix result
