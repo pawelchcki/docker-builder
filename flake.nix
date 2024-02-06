@@ -7,7 +7,8 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
     pyproject-nix.url = "github:nix-community/pyproject.nix";
-    # flake-root.url = "github:srid/flake-root";
+
+    nix2containerPkg.url = "github:nlewo/nix2container";
   };
 
   outputs =
@@ -16,6 +17,7 @@
     , flake-utils
     , treefmt-nix
     , pyproject-nix
+    , nix2containerPkg
     ,
     }:
     flake-utils.lib.eachDefaultSystem (system:
@@ -24,38 +26,65 @@
         projectRoot = ./.;
       };
       pkgs = nixpkgs.legacyPackages.${system};
+      nix2container = nix2containerPkg.packages.${system}.nix2container;
+  
       python = pkgs.python310;
+      pythonPkgs = pkgs.python310Packages;
 
-      projectAttrs = project.renderers.buildPythonPackage { inherit python; };
+      packageAttrs = project.renderers.buildPythonPackage { inherit python; };
+      packageDeps = project.renderers.withPackages { inherit python; };
 
-      projectPythonDeps = project.renderers.withPackages { inherit python; };
+      pythonDevEnv = python.withPackages packageDeps;
 
-      pythonEnv = python.withPackages projectPythonDeps;
-
-
-      pythonPackages = pkgs.python310Packages;
       treefmt = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
 
-      projectLib = python.pkgs.buildPythonPackage (projectAttrs);
+      finalPackage = python.pkgs.buildPythonPackage packageAttrs;
+      finalApp = python.pkgs.buildPythonApplication packageAttrs;
+      devEnv = pkgs.buildEnv {
+        name = "root";
+        paths = [ pkgs.bashInteractive pkgs.coreutils pkgs.skopeo pkgs.crane treefmt.config.build.wrapper pythonDevEnv ];
+        pathsToLink = [ "/bin" ]; 
+      };
     in
     {
       packages = {
         python = python;
+        ciContainer = nix2container.buildImage {
+          name = "registry.ddbuild.io/apm-reliability-environment/handmade/nixci";
+
+          copyToRoot = pkgs.buildEnv {
+            name = "root";
+            paths = [ devEnv pythonPkgs.pytest ];
+            pathsToLink = [ "/bin" ];
+          };
+        };
+        toolContainer = nix2container.buildImage {
+          name = "registry.ddbuild.io/apm-reliability-environment/handmade/docker-builder";
+          tag = "latest";
+          config = {
+            entrypoint = ["/bin/docker-builder"];
+          };
+
+          copyToRoot = pkgs.buildEnv {
+            name = "root";
+            paths = [ finalApp ];
+            pathsToLink = [ "/bin" ];
+          };
+        };
       };
 
-      packages.default = projectLib;
-
+      packages.default = finalPackage;
       formatter = treefmt.config.build.wrapper;
+
       devShells.default =
         pkgs.mkShell
           {
             venvDir = "./.venv";
-            packages =
-              [
-                pythonEnv
-                pythonPackages.pytest
-                pythonPackages.venvShellHook
-              ];
+            nativeBuildInputs = [ pythonDevEnv pythonPkgs.venvShellHook ];
+            packages = [
+              devEnv
+              pythonPkgs.pytest
+            ];
             postShellHook = ''
               export PYTHONPATH="$PYTHONPATH:$(pwd)" # ensuring pytest invocation works
             '';
